@@ -1,50 +1,53 @@
 import logging
 import re
-from aiogram import Bot, Dispatcher, executor, types
 import aiohttp
+import json
+from aiogram import Bot, types, Router, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.filters.command import CommandStart
 from config import API_TOKEN, KINOPOISK_API_KEY
+from utilities import send_movie_info, save_data
+
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
-
-MAX_MESSAGE_LENGTH = 4096
+storage = MemoryStorage()
+router = Router()
+dispatcher = Dispatcher(storage=storage)
+dispatcher.include_router(router)
 
 async def get_movie_info(movie_id):
-    url = f"https://api.kinopoisk.dev/v1.4/movie/{movie_id}"
-    headers = {
-        "accept": "application/json",
-        "X-API-KEY": KINOPOISK_API_KEY
-    }
+    url = f"https://api.kinopoisk.dev/v1.4/movie/{movie_id}?token={KINOPOISK_API_KEY}"
+    headers = {"accept": "application/json"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
-            return await response.text()
+            data = await response.json()
+            return data
 
-async def send_long_message(chat_id, text):
-    while text:
-        part = text[:MAX_MESSAGE_LENGTH]
-        await bot.send_message(chat_id, part)
-        text = text[MAX_MESSAGE_LENGTH:]
-
-@dp.message_handler(commands=['start'])
+@router.message(CommandStart())
 async def send_welcome(message: types.Message):
-    await message.reply("Привет! Отправь мне полную ссылку на страницу фильма на КиноПоиске.")
+    await message.answer("Привет! Отправь мне полную ссылку на страницу фильма на КиноПоиске.")
 
-@dp.message_handler()
+@router.message()
 async def extract_id_and_fetch_info(message: types.Message):
     try:
         url = message.text
         movie_id_match = re.search(r'kinopoisk\.ru/film/(\d+)', url)
         if movie_id_match:
             movie_id = movie_id_match.group(1)
-            movie_info = await get_movie_info(movie_id)
-            await send_long_message(message.chat.id, movie_info)
+            movie_data = await get_movie_info(movie_id)
+            await save_data(movie_data)
+            await send_movie_info(message, movie_data)
         else:
-            await message.reply("Пожалуйста, отправьте корректную ссылку на страницу КиноПоиска.")
+            await message.answer("Пожалуйста, отправьте корректную ссылку на страницу КиноПоиска.")
     except Exception as e:
         logging.error(f"Ошибка при обработке запроса: {e}")
-        await message.reply("Произошла ошибка при обработке вашего запроса.")
+        await message.answer("Произошла ошибка при обработке вашего запроса.")
+
+async def main():
+    await dispatcher.start_polling(bot)
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    import asyncio
+    asyncio.run(main())
