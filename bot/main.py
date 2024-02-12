@@ -40,7 +40,7 @@ async def extract_id_and_fetch_info(message: types.Message):
     try:
         url = message.text
         # Извлечение ID фильма из URL с помощью регулярного выражения
-        movie_id_match = re.search(r'kinopoisk\.ru/film/(\d+)', url)
+        movie_id_match = re.search(r'kinopoisk\.ru/(?:film|series)/(\d+)', url)
         if movie_id_match:
             movie_id = movie_id_match.group(1)
             # Получение информации о фильме и отправка её пользователю
